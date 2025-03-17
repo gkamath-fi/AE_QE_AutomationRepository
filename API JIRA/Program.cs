@@ -1,4 +1,4 @@
-﻿using System.Data;
+using System.Data;
 using System.Text.RegularExpressions;
 using System.Net;
 using Newtonsoft.Json.Linq;
@@ -9,8 +9,13 @@ using System.ComponentModel;
 using System.Text;
 using System.Web;
 using Newtonsoft.Json;
+
 //Changes Pushed by gkamath on 3/17/2025
 namespace API //Changes to API
+
+
+namespace API
+
 {    
     [DisplayName("Jira Defect Data")]
     public class DefectData
@@ -51,7 +56,9 @@ namespace API //Changes to API
         public string Resolution { get; set; } = "";
         [DisplayName("Defect Purpose")]
         public string Purpose { get; set; } = "";
+
         //Automation reporting for PCG new change on 3/10/2025
+
         [DisplayName("Linked Test")]
         public string LinkedTest { get; set; } = "";
     }  
