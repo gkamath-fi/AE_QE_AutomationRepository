@@ -11,11 +11,7 @@ using System.Web;
 using Newtonsoft.Json;
 
 //Changes Pushed by gkamath on 3/17/2025
-namespace API //Changes to API
-
-
 namespace API
-
 {    
     [DisplayName("Jira Defect Data")]
     public class DefectData
@@ -56,9 +52,7 @@ namespace API
         public string Resolution { get; set; } = "";
         [DisplayName("Defect Purpose")]
         public string Purpose { get; set; } = "";
-
         //Automation reporting for PCG new change on 3/10/2025
-
         [DisplayName("Linked Test")]
         public string LinkedTest { get; set; } = "";
     }  
@@ -227,7 +221,6 @@ namespace API
             }
             catch
             {
-
             }
         }
         public static void GETISSUELINK(string testexecid)
@@ -264,7 +257,6 @@ namespace API
             }
             catch
             {
-
             }
         }
         public static void GETZEPHYRSCALEDATATESTEXECUTION(string PrjName,string  Bunit)
