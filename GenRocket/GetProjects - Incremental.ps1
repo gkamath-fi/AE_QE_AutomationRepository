@@ -1,6 +1,6 @@
 # Clear Screen
 cls
-
+# CyberArk Integration
 $cyberark= Invoke-RestMethod -Method Get -Uri http://10.150.36.150/AIMWebService/api/accounts -Body @{AppID = "QEC4E"; Safe = "FIDEV-QEC4E"; Object = "Website-GenericWebApp-httpsapp.genrocket.com-CAF_GenRocket_UserName"}
 $cyberarkuser=$cyberark.Content
 
