@@ -1,34 +1,32 @@
-﻿using System;
 using System.Data;
-using System.IO;
-using System.IO.Pipes;
 using System.Text.RegularExpressions;
 using System.Net;
-using System.Runtime.InteropServices;
-using Microsoft.Office.Interop.Excel;
-using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using DataTable = System.Data.DataTable;
 using System.Text.Json;
-//using System.Windows.Forms;
 using Excel = Microsoft.Office.Interop.Excel;
 using System.ComponentModel;
-using static System.Net.Mime.MediaTypeNames;
-using System.Security.Policy;
-using System.Linq;
-using System.Collections.Generic;
-using Microsoft.VisualBasic.Logging;
-using System.Runtime.ConstrainedExecution;
+using System.Text;
+using System.Web;
+using Newtonsoft.Json;
 
 namespace API
-{
+{    
     [DisplayName("Jira Defect Data")]
     public class DefectData
     {
+        [DisplayName("Project")]
+        public string Project { get; set; } = "";
         [DisplayName("Creation Date")]
         public string Creation_Date { get; set; } = "";
+        [DisplayName("Business Unit")]
+        public string BU{ get; set; } = "";
         [DisplayName("Defect Key")]
         public string Key { get; set; } = "";
+        [DisplayName("Defect ID")]
+        public string ID { get; set; } = "";
+        [DisplayName("Defect Age")]
+        public string DefectAge { get; set; } = "";
         [DisplayName("Sprint")]
         public string Sprint { get; set; } = "";
         [DisplayName("Sprint Start Date")]
@@ -40,7 +38,7 @@ namespace API
         [DisplayName("Defect Summary")]
         public string Summary { get; set; } = "";
         [DisplayName("Defect Type")]
-        public string Type { get; set; } = "";
+        public string Type { get; set; } = "Bug";
         [DisplayName("Issue Type")]
         public string Issue_Type { get; set; } = "";
         [DisplayName("Assignee")]
@@ -53,33 +51,110 @@ namespace API
         public string Resolution { get; set; } = "";
         [DisplayName("Defect Purpose")]
         public string Purpose { get; set; } = "";
-    }
-    public class TestExecutionReport
-    {
-       // public string 
-    }
-    
+        [DisplayName("Linked Test")]
+        public string LinkedTest { get; set; } = "";
+    }  
+
     public class TEMPLINKVAL
     {
         public string url { get; set; } = "";
         public string value { get; set; } = "";
+        
+    }
+    public class PRJDATA
+    {
+        public string PrName { get; set; } = "";
+        public string BuName { get; set; } = "";
+        public PRJDATA(string pn,string bn)
+        {
+            PrName = pn;
+            BuName = bn;
+        }
     }
     public static class JIRAALLDefects
-    { 
+    {
         public static List<TEMPLINKVAL> TLIST = new();
-        public static void Main()
+        private static BackgroundWorker fetchworker = new();
+        public static List<DefectData> DefectArray = new List<DefectData>();
+        public static List<TestCaseData> TCArray = new List<TestCaseData>();
+        static int threadcount = 0;
+        public static void  Main()
         {
-            
             try
             {
-                Console.WriteLine("Time Start: " + DateTime.Now.ToString("yyyy-MM-dd Hh24:mm:ss"));
-                //List<string> SERVERLIST = GETNEOLOADSERVERS();
-                //GENROCKETDATA();
-                JIRADEFECTdata();
-                //NEOLOADDATA(SERVERLIST);
-                GETZEPHYRSCALEDATATESTCASE();
-                GETZEPHYRSCALEDATATESTEXECUTION();
-                Console.WriteLine("Time End: " + DateTime.Now.ToString("yyyy-MM-dd Hh24:mm:ss"));
+                Console.WriteLine("Enter Option J(JIRA and Zehyr report) N: Neoload Validation: ");
+                string option = Console.ReadLine();
+                switch (option)
+                {
+                    case "J":
+                        int BufferSize = 128;
+                        Console.WriteLine("Time Start: " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
+                        string[] files = Directory.GetFiles(@"c:\TestFramework\", "Projects*.txt");
+                        foreach (string fname in files)
+                        {
+                            BackgroundWorker worker = new BackgroundWorker { WorkerReportsProgress = true, WorkerSupportsCancellation = true };
+                            worker.DoWork += worker_DoWork;
+                            worker.WorkerReportsProgress = true;
+                            worker.RunWorkerCompleted += worker_RunWorkerCompleted;
+                            worker.RunWorkerAsync(fname);
+                            threadcount++;
+                        }
+                        while (threadcount > 0)
+                        {
+                            System.Threading.Thread.Sleep(50000);
+                        }
+                        Console.WriteLine("Time End: " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
+                        break;
+                    case "N":
+                        List<string> SERVERLIST = GETNEOLOADSERVERS();
+                        NEOLOADDATA(SERVERLIST);
+                        break;
+                }
+            }
+            catch
+            {
+            }
+        }
+        
+        private static void worker_DoWork(object sender, DoWorkEventArgs e)
+        {
+            try
+            {
+                int BufferSize = 120;
+                string fname = (string)(e.Argument);
+                string PrjName = "";
+                string Bunit = "";
+                using (var fileStream = File.OpenRead(fname))
+                {
+                    using (var streamReader = new StreamReader(fileStream, Encoding.UTF8, true, BufferSize))
+                    {
+                        String line;
+                        while ((line = streamReader.ReadLine()) != null)
+                        {
+                            if (!string.IsNullOrEmpty(line.Trim()))
+                            {
+                                PrjName = line.Split(',')[0].Trim();
+                                Bunit = line.Split(',')[1].Trim();
+                              
+                                JIRADEFECTdata(PrjName,Bunit).Wait();
+                            
+                                GETZEPHYRSCALEDATATESTCASE(PrjName, Bunit);
+                                GETZEPHYRSCALEDATATESTEXECUTION(PrjName, Bunit);
+                            }
+                        }
+                    }
+                }
+            }
+            catch
+            {
+            }
+        }
+        public static  void worker_RunWorkerCompleted(object sender, RunWorkerCompletedEventArgs e)
+        {
+            try
+            {
+                Console.WriteLine("Thread Completed");
+                threadcount--;
             }
             catch
             {
@@ -87,16 +162,21 @@ namespace API
         }
         public class TestCaseData
         {
+            [DisplayName("Business Unit")]
+            public string BU { get; set; } = "";
             [DisplayName("Test Case")]
             public string TestCase { get; set; } = "";
             [DisplayName("Project")]
             public string Project { get; set; } = "";
             [DisplayName("Created On")]
             public string CreatedOn { get; set; } = "";
+            public string Automated { get; set; } = "No";
             public string Purpose { get; set; } = "";
         }
         public class TextExecutionData
         {
+            [DisplayName("Business Unit")]
+            public string BU { get; set; } = "";
             [DisplayName("Test Execution Key")]
             public string TestExecutionKey { get; set; } = "";
             [DisplayName("Project")]
@@ -120,116 +200,164 @@ namespace API
             [DisplayName("Execution Type")]
             public string ExecutionType { get; set; } = "";
         }
-        public static void GETZEPHYRSCALEDATATESTEXECUTION()
+        public static void TCAutomated(string TCIDS)
+        {
+            try
+            {
+                string TCID = TCIDS.Split("/")[5];
+                int DSize = TCArray.Count;
+              
+                for (int j = 0; j < DSize; j++)
+                {
+                    if (TCArray[j].TestCase == TCID)
+                    {
+                        TCArray[j].Automated = "Yes";
+                        break;
+                    }
+                }
+                
+            }
+            catch
+            {
+
+            }
+        }
+        public static void GETISSUELINK(string testexecid)
+        {
+            try
+            {
+                string ZephyrAuth = GetAuth("ZEPHYRAUTH");
+                HttpWebRequest request = (HttpWebRequest)WebRequest.Create("https://api.zephyrscale.smartbear.com/v2/testexecutions/" + testexecid + "/links");
+                request.Method = "GET";
+                request.UserAgent = "AEQE Analysis";
+                request.Headers.Add("Authorization", ZephyrAuth);
+                request.Headers.Add("Accept", "application/json");
+                request.Headers.Add("Content-Type", "application/json");
+                request.KeepAlive = true;
+                var response = (HttpWebResponse)request.GetResponse();
+                string  responseString = new StreamReader(response.GetResponseStream()).ReadToEnd();
+
+                JObject jobj = JObject.Parse(responseString);
+                JArray jArray = (JArray)jobj["issues"];
+                int jsize = jArray.Count;
+                int DSize = DefectArray.Count;
+                for (int i = 0; i < jsize; i++)
+                {
+                    string issueid = Convert.ToString(jobj[i]["issueId"]);
+                    for(int j=0;j<DSize;j++)
+                    {
+                        if (DefectArray[j].ID == issueid)
+                        {
+                            DefectArray[j].LinkedTest = testexecid;
+                            break;
+                        }
+                    }
+                }
+            }
+            catch
+            {
+
+            }
+        }
+        public static void GETZEPHYRSCALEDATATESTEXECUTION(string PrjName,string  Bunit)
         {
             try
             {
                 int startindx = 0;
                 int maxresults = 50;
-                bool continueloop = true;
-                Console.WriteLine("Which Project you need the defect details on: ");
-                string Prj = Console.ReadLine();
-                DataTable ZSCALEEXEC = new();
-                ZSCALEEXEC.Columns.Add("Test Execution Key");
-                ZSCALEEXEC.Columns.Add("Project");
-                ZSCALEEXEC.Columns.Add("Test Case");
-                ZSCALEEXEC.Columns.Add("Test Cycle");
-                ZSCALEEXEC.Columns.Add("Environment");
-                ZSCALEEXEC.Columns.Add("Assigned To");
-                ZSCALEEXEC.Columns.Add("_time");
-                ZSCALEEXEC.Columns.Add("Actual End Date");
-                ZSCALEEXEC.Columns.Add("Execution Type");
-                ZSCALEEXEC.Columns.Add("Status");
+                bool continueloop = true;                
+                string Prj = PrjName;
+                string ZephyrAuth = GetAuth("ZEPHYRAUTH");
+                string JIRAAUTH = GetAuth("JIRAAUTH");
                 List<TextExecutionData> TEArray = new List<TextExecutionData>();
+                string purpose = Prj + " Test Execution Data";
+                string autostatus = "";
+                int jsize = 0;
+                string responseString;
                 while (continueloop)
                 {
-                    string _URL = "https://api.zephyrscale.smartbear.com/v2/testexecutions?projectKey=" + Prj + "&maxResults=" + maxresults.ToString() + "&startAt=" + startindx.ToString();
-
-                    HttpWebRequest request = (HttpWebRequest)WebRequest.Create(_URL);
+                    
+                    HttpWebRequest request = (HttpWebRequest)WebRequest.Create("https://api.zephyrscale.smartbear.com/v2/testexecutions?projectKey=" + Prj + "&maxResults=" + maxresults.ToString() + "&startAt=" + startindx.ToString());
                     request.Method = "GET";
                     request.UserAgent = "AEQE Analysis";
-                    request.Headers.Add("Authorization", GetAuth("ZEPHYRAUTH"));
+                    request.Headers.Add("Authorization", ZephyrAuth);
                     request.Headers.Add("Accept", "application/json");
                     request.Headers.Add("Content-Type", "application/json");
                     request.KeepAlive = true;
                     var response = (HttpWebResponse)request.GetResponse();
-                    var responseString = new StreamReader(response.GetResponseStream()).ReadToEnd();
-
+                    responseString = new StreamReader(response.GetResponseStream()).ReadToEnd();
                     JObject jobj = JObject.Parse(responseString);
                     JArray jArray = (JArray)jobj["values"];
-                    int jsize = jArray.Count;
-
+                    jsize = jArray.Count;
                     for (int i = 0; i < jsize; i++)
                     {
                         TextExecutionData teitem = new TextExecutionData();
-                        teitem.Purpose = Prj + " Test Execution Data";
-                        DataRow DR = ZSCALEEXEC.NewRow();
-                        DR["Test Execution Key"] = jobj["values"][i]["key"].ToString();
+                        teitem.Purpose = purpose;
+                        
                         teitem.TestExecutionKey = jobj["values"][i]["key"].ToString();
+                        
                         try
                         {
-                            DR["Project"] = GetProjectData(jobj["values"][i]["project"]["self"].ToString(), jobj["values"][i]["project"]["id"].ToString());
-                            teitem.Project = GetProjectData(jobj["values"][i]["project"]["self"].ToString(), jobj["values"][i]["project"]["id"].ToString());
+                            teitem.BU = Bunit;
+                            teitem.Project = GetProjectData(ZephyrAuth, JIRAAUTH, jobj["values"][i]["project"]["self"].ToString(), jobj["values"][i]["project"]["id"].ToString());
                         }
                         catch
                         {
-                        }
-                        DR["Test Case"] = GetProjectData(jobj["values"][i]["testCase"]["self"].ToString(), jobj["values"][i]["testCase"]["id"].ToString(), "Test Case");
-                        teitem.TestCase = GetProjectData(jobj["values"][i]["testCase"]["self"].ToString(), jobj["values"][i]["testCase"]["id"].ToString(), "Test Case");
-                        DR["Status"] = GetProjectData(jobj["values"][i]["testExecutionStatus"]["self"].ToString(), jobj["values"][i]["testExecutionStatus"]["id"].ToString(), "Status");
-                        teitem.Status = GetProjectData(jobj["values"][i]["testExecutionStatus"]["self"].ToString(), jobj["values"][i]["testExecutionStatus"]["id"].ToString(), "Status");
+                        }                       
+                        teitem.TestCase = GetProjectData(ZephyrAuth, JIRAAUTH, jobj["values"][i]["testCase"]["self"].ToString(), jobj["values"][i]["testCase"]["id"].ToString(), "Test Case");                      
+                        teitem.Status = GetProjectData(ZephyrAuth, JIRAAUTH, jobj["values"][i]["testExecutionStatus"]["self"].ToString(), jobj["values"][i]["testExecutionStatus"]["id"].ToString(), "Status");
                         try
                         {
-                            DR["Environment"] = GetProjectData(jobj["values"][i]["environment"]["self"].ToString(), jobj["values"][i]["environment"]["id"].ToString(), "Environment");
-                            if(string.IsNullOrEmpty(Convert.ToString(DR["Environment"])))
+                            teitem.Environment = GetProjectData(ZephyrAuth, JIRAAUTH, jobj["values"][i]["environment"]["self"].ToString(), jobj["values"][i]["environment"]["id"].ToString(), "Environment");
+                            if(string.IsNullOrEmpty(teitem.Environment))
                             {
-                                DR["Environment"] = "Not Mentioned";
+                                teitem.Environment = "Not Mentioned";
                             }
-                            teitem.Environment = Convert.ToString(DR["Environment"]);
                         }
                         catch
                         {
-                            DR["Environment"] = "Not Mentioned";
+                            
                             teitem.Environment = "Not Mentioned";
                         }
-                        DR["Actual End Date"] = jobj["values"][i]["actualEndDate"].ToString().Split(' ')[0];
                         teitem.ActualEndDate = jobj["values"][i]["actualEndDate"].ToString().Split(' ')[0];
-
-                        DR["_time"] = jobj["values"][i]["actualEndDate"].ToString().Split(' ')[0];
                         teitem._time = jobj["values"][i]["actualEndDate"].ToString().Split(' ')[0];
-
-                        DR["Execution Type"] = jobj["values"][i]["automated"].ToString();
-                        teitem.ExecutionType= jobj["values"][i]["automated"].ToString();
+                        autostatus = "Automated";
+                        if(jobj["values"][i]["automated"].ToString()=="False")
+                        {
+                            autostatus = "Manual";
+                        }
+                        else
+                        {
+                            TCAutomated(jobj["values"][i]["testCase"]["self"].ToString());
+                            //if (teitem.Status == "Blocked" || teitem.Status == "Fail")
+                            //{
+                            //    GETISSUELINK(teitem.TestExecutionKey);
+                            //}
+                        }
+                        teitem.ExecutionType= autostatus;
                         try
                         {
                             if (!string.IsNullOrEmpty(jobj["values"][i]["assignedToId"].ToString()))
                             {
-                               // Console.WriteLine("https://fish-net.atlassian.net/rest/api/3/user?accountId=" + jobj["values"][i]["assignedToId"].ToString());
-                                DR["Assigned To"] = GetProjectData("https://fish-net.atlassian.net/rest/api/3/user?accountId=" + jobj["values"][i]["assignedToId"].ToString(), jobj["values"][i]["assignedToId"].ToString(), "Assigned To");
-                                
+                                teitem.AssignedTo = GetProjectData(ZephyrAuth, JIRAAUTH, "https://fish-net.atlassian.net/rest/api/3/user?accountId=" + jobj["values"][i]["assignedToId"].ToString(), jobj["values"][i]["assignedToId"].ToString(), "Assigned To");
                             }
-                            if (string.IsNullOrEmpty(Convert.ToString(DR["Assigned To"])))
+                            if (string.IsNullOrEmpty(teitem.AssignedTo))
                             {
-                                DR["Assigned To"] = "Unassigned";
+                                teitem.AssignedTo = "Unassigned";
                             }
-                            teitem.AssignedTo = Convert.ToString(DR["Assigned To"]);
                         }
                         catch
                         {
-                            DR["Assigned To"] = "Unassigned";
                             teitem.AssignedTo = "Unassigned";
                         }
                         try
                         {
-                            DR["Test Cycle"] = GetProjectData(jobj["values"][i]["testCycle"]["self"].ToString(), jobj["values"][i]["environment"]["id"].ToString(), "Test Cycle");
-                            teitem.TestCycle = GetProjectData(jobj["values"][i]["testCycle"]["self"].ToString(), jobj["values"][i]["environment"]["id"].ToString(), "Test Cycle");
+                            teitem.TestCycle = GetProjectData(ZephyrAuth,JIRAAUTH,jobj["values"][i]["testCycle"]["self"].ToString(), jobj["values"][i]["environment"]["id"].ToString(), "Test Cycle");
                         }
                         catch
                         {
-                            DR["Test Cycle"] = "Not Specified";
                             teitem.TestCycle = "Not Specified";
                         }
-                        ZSCALEEXEC.Rows.Add(DR);
                         TEArray.Add(teitem);
                     }
                     if (jsize < 50)
@@ -237,125 +365,70 @@ namespace API
                         continueloop = false;
                     }
                     startindx = startindx + 50;
-
-
                     request.Abort();
                     response.Close();
-
                 }
-
-                // MessageBox.Show(ZSCALEDATA.Rows.Count.ToString());
-
-                Excel.Application application = new Excel.Application();
-                Excel.Workbook workbook = application.Workbooks.Add();
-                Excel.Worksheet worksheet = workbook.Sheets[1];
-                worksheet.Name = "Test Case Data";
-
-                /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-                var columns = ZSCALEEXEC.Columns.Count;
-                var rows = ZSCALEEXEC.Rows.Count;
-
-                Excel.Range range = worksheet.Range["A1", String.Format("{0}{1}", GetExcelColumnName(columns), rows + 1)];
-
-                object[,] data = new object[rows + 1, columns];
-
-                for (int rowNumber = 0; rowNumber < rows; rowNumber++)
-                {
-                    if (rowNumber == 0)
-                    {
-                        for (int columnNumber = 0; columnNumber < columns; columnNumber++)
-                        {
-                            data[rowNumber, columnNumber] = (ZSCALEEXEC.Columns[columnNumber].ColumnName);
-                        }
-                    }
-                    for (int columnNumber = 0; columnNumber < columns; columnNumber++)
-                    {
-                        data[rowNumber + 1, columnNumber] = Convert.ToString(ZSCALEEXEC.Rows[rowNumber][columnNumber]);
-                    }
-                }
-                range.Value = data;
-
-                if (File.Exists(@"C:\km\TExecDetails_" + Prj + ".xlsx"))
-                {
-                    File.Delete(@"C:\km\TExecDetails_" + Prj + ".xlsx");
-                }
-                workbook.SaveAs(@"C:\km\TExecDetails_" + Prj + ".xlsx");
-                workbook.Close();
-                Marshal.ReleaseComObject(application);
-
                 var prettyJson = System.Text.Json.JsonSerializer.Serialize(TEArray, new JsonSerializerOptions { WriteIndented = true });
-               
-                File.WriteAllText(@"c:\km\" + Prj + "TestExecutionData.json", prettyJson);
                 UploadToSPlunk(prettyJson);
+                //var prettyJson1 = System.Text.Json.JsonSerializer.Serialize(DefectArray, new JsonSerializerOptions { WriteIndented = true });
+                //UploadToSPlunk(prettyJson1); 
+                prettyJson = System.Text.Json.JsonSerializer.Serialize(TCArray, new JsonSerializerOptions { WriteIndented = true });
+                UploadToSPlunk(prettyJson);
+
+                TEArray = new();
+                TCArray = new();
             }
-            catch(Exception E)
+            catch (Exception E)
             {
                 MessageBox.Show(E.Message, "Error");
             }
         }
-        public static void GETZEPHYRSCALEDATATESTCASE()
+        public static void GETZEPHYRSCALEDATATESTCASE(string PrjName, string Bunit)
         {
             try
             {
-                
-                //getTestCaseData
                 int startindx = 0;
                 int maxresults = 50;
-                Console.WriteLine("Which Project you need the Test Case details on: ");
-                string Prj = Console.ReadLine();
+                string Prj = PrjName;
                 bool continueloop = true;
-                DataTable ZSCALEDATA = new DataTable();
-                ZSCALEDATA.Columns.Add("Test Case Key");
-                ZSCALEDATA.Columns.Add("Test Case Name");
-                ZSCALEDATA.Columns.Add("Created On");
-                ZSCALEDATA.Columns.Add("Project");
-                ZSCALEDATA.Columns.Add("Priority");
-                ZSCALEDATA.Columns.Add("Status");
-                ZSCALEDATA.Columns.Add("Purpose");
-                List<TestCaseData> TCArray = new List<TestCaseData>();
+                string ZephyrAuth = GetAuth("ZEPHYRAUTH");
+                string JIRAAUTH = GetAuth("JIRAAUTH");
+                
+                string Purpose = Prj + " Test Case Data";
+                string _URL = "";
+                int jsize = 0;
+                int i;
                 while (continueloop)
                 {
-                    string _URL = "https://api.zephyrscale.smartbear.com/v2/testcases?projectKey=" + Prj + "&maxResults=" + maxresults.ToString() + "&startAt=" + startindx.ToString();
+                    _URL = "https://api.zephyrscale.smartbear.com/v2/testcases?projectKey=" + Prj + "&maxResults=" + maxresults.ToString() + "&startAt=" + startindx.ToString();
                     HttpWebRequest request = (HttpWebRequest)WebRequest.Create(_URL);
                     request.Method = "GET";
                     request.UserAgent = "AEQE Analysis";
-                    request.Headers.Add("Authorization", GetAuth("ZEPHYRAUTH"));
+                    request.Headers.Add("Authorization", ZephyrAuth);
                     request.Headers.Add("Accept", "application/json");
                     request.Headers.Add("Content-Type", "application/json");
                     request.KeepAlive = true;
                     var response = (HttpWebResponse)request.GetResponse();
                     var responseString = new StreamReader(response.GetResponseStream()).ReadToEnd();
-
                     request.Abort();
                     response.Close();
-
                     JObject jobj = JObject.Parse(responseString);
                     JArray jArray = (JArray)jobj["values"];
-                    int jsize = jArray.Count;
-
-                    for (int i = 0; i < jsize; i++)
+                    jsize = jArray.Count;
+                    for (i = 0; i < jsize; i++)
                     {
-                        DataRow DR = ZSCALEDATA.NewRow();
                         TestCaseData TCD = new();
-                        DR["Test Case Key"] = jobj["values"][i]["key"].ToString();
                         TCD.TestCase = jobj["values"][i]["key"].ToString();
-                        DR["Purpose"]= Prj + " Test Case Data";
-                        TCD.Purpose = Prj + " Test Case Data";
-                        DR["Test Case Name"] = jobj["values"][i]["name"].ToString();
+                        TCD.Purpose = Purpose;                        
                         try
                         {
-                            DR["Project"] = GetProjectData(jobj["values"][i]["project"]["self"].ToString(),jobj["values"][i]["project"]["id"].ToString());
-                            TCD.Project = Convert.ToString(DR["Project"]);
+                            TCD.BU = Bunit;
+                            TCD.Project = GetProjectData(ZephyrAuth, JIRAAUTH,jobj["values"][i]["project"]["self"].ToString(),jobj["values"][i]["project"]["id"].ToString());
                         }
                         catch
                         {
-                        }
-
-                        DR["Created On"] = jobj["values"][i]["createdOn"].ToString().Split(' ')[0]; 
+                        }                        
                         TCD.CreatedOn = jobj["values"][i]["createdOn"].ToString().Split(' ')[0];
-                        DR["Priority"] = GetProjectData(jobj["values"][i]["priority"]["self"].ToString(),jobj["values"][i]["priority"]["id"].ToString(), "Priority");
-                        DR["Status"] = GetProjectData(jobj["values"][i]["status"]["self"].ToString(),jobj["values"][i]["status"]["id"].ToString(),"Status");
-                        ZSCALEDATA.Rows.Add(DR);
                         TCArray.Add(TCD);
                     }
                     if (jsize <50)
@@ -363,93 +436,47 @@ namespace API
                         continueloop = false;
                     }
                     startindx = startindx + 50;
-                }
-                // MessageBox.Show(ZSCALEDATA.Rows.Count.ToString());
-
-                Excel.Application application = new Excel.Application();
-                Excel.Workbook workbook = application.Workbooks.Add();
-                Excel.Worksheet worksheet = workbook.Sheets[1];
-                worksheet.Name = "Test Case Data";
-                
-                /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-                var columns = ZSCALEDATA.Columns.Count;
-                var rows = ZSCALEDATA.Rows.Count;
-
-                Excel.Range range = worksheet.Range["A1", String.Format("{0}{1}", GetExcelColumnName(columns), rows + 1)];
-
-                object[,] data = new object[rows + 1, columns];
-
-                for (int rowNumber = 0; rowNumber < rows; rowNumber++)
-                {
-                    if (rowNumber == 0)
-                    {
-                        for (int columnNumber = 0; columnNumber < columns; columnNumber++)
-                        {
-                            data[rowNumber, columnNumber] = (ZSCALEDATA.Columns[columnNumber].ColumnName);
-                        }
-                    }
-                    for (int columnNumber = 0; columnNumber < columns; columnNumber++)
-                    {
-                        data[rowNumber + 1, columnNumber] = Convert.ToString(ZSCALEDATA.Rows[rowNumber][columnNumber]);
-                    }
-                }
-                range.Value = data;
-
-                if (File.Exists(@"C:\km\TCDetails_" + "AEQE" + ".xlsx"))
-                {
-                    File.Delete(@"C:\km\TCDetails_" + "AEQE" + ".xlsx");
-                }
-                workbook.SaveAs(@"C:\km\TCDetails_" + "AEQE" + ".xlsx");
-                workbook.Close();
-                Marshal.ReleaseComObject(application);
-                var prettyJson = System.Text.Json.JsonSerializer.Serialize(TCArray, new JsonSerializerOptions { WriteIndented = true });
-
-                //File.WriteAllText(@"c:\km\" + Prj + "TestExecutionData.json", prettyJson);
-                UploadToSPlunk(prettyJson);
-
+                } 
+                //var prettyJson = System.Text.Json.JsonSerializer.Serialize(TCArray, new JsonSerializerOptions { WriteIndented = true });
+               // UploadToSPlunk(prettyJson);
             }
             catch(Exception E)
             {
                 MessageBox.Show(E.Message);
             }
         }
-        public static string GetProjectData(string _URL,string prjID,string refstr="Project")
+        public static string GetProjectData(string ZAUTH, string JAUTH,string _URL,string prjID,string refstr="Project")
         {
             try
             {
                 try
                 {
-
                     if(TLIST.FindIndex(e => e.url.Equals(_URL))>=0)
                     {
                         return TLIST[TLIST.FindIndex(e => e.url.Equals(_URL))].value;
                     }
-
                 }
                 catch
                 {
-
                 }
                 HttpWebRequest request = (HttpWebRequest)WebRequest.Create(_URL);
                 request.Method = "GET";
                 request.UserAgent = "AEQE Analysis";
                 if (refstr != "Assigned To")
                 {
-                    request.Headers.Add("Authorization", GetAuth("ZEPHYRAUTH"));
+                    request.Headers.Add("Authorization", ZAUTH);
                 }
                 else
                 {
-                    request.Headers.Add("Authorization", GetAuth("JIRAAUTH"));
+                    request.Headers.Add("Authorization", JAUTH);
                 }
                 request.Headers.Add("Accept", "application/json");
                 request.Headers.Add("Content-Type", "application/json");
                 request.KeepAlive = true;
                 var response = (HttpWebResponse)request.GetResponse();
                 var responseString = new StreamReader(response.GetResponseStream()).ReadToEnd();
-
                 request.Abort();
                 response.Close();
-
                 JObject jobj = JObject.Parse(responseString);
                 TEMPLINKVAL tkl = new TEMPLINKVAL();
                 tkl.url = _URL;
@@ -512,38 +539,36 @@ namespace API
                 string _URL = "https://fish-net.atlassian.net//wiki/api/v2/pages/1132201180?body-format=ATLAS_DOC_FORMAT";
                 HttpWebRequest request = (HttpWebRequest)WebRequest.Create(_URL);
                 request.Method = WebRequestMethods.Http.Get;
-
                 request.UserAgent = "AEQE Analysis";
-                //MessageBox.Show("1");
                 request.Headers.Add("Authorization", GetAuth("JIRAAUTH"));
                 request.Headers.Add("Accept", "application/json");
                 request.Headers.Add("Content-Type", "application/json");
                 request.KeepAlive = true;
-                //MessageBox.Show("2");
                 var response = (HttpWebResponse)request.GetResponse();
+                
                 var responseString = new StreamReader(response.GetResponseStream()).ReadToEnd();
-                //MessageBox.Show("3");
-                string rx = @"([A-Za-z]{2})-([A-Za-z]{2})-([A-Za-z]{1})(\d{5}):7100";
 
+                
+                string rx = @"([A-Za-z]{2})-([A-Za-z]{2})-([A-Za-z]{1})(\d{5}):7100";
                 request.Abort();
                 response.Close();
                 MatchCollection m = Regex.Matches(responseString, rx, RegexOptions.IgnoreCase);
                 foreach (Match match in m)
                 {
                     Console.WriteLine("Server name : {0}, Index : {1}", match.Value, match.Index);
-                    if(match.Value.ToString().ToUpper().StartsWith("CP"))
+                    if (match.Value.ToString().ToUpper().StartsWith("CP"))
                     {
                         Prodservers.Add(match.Value.ToString().ToUpper());
                     }
                 }
             }
-            catch(Exception E)
+            catch (Exception E)
             {
                 MessageBox.Show(E.Message, "Error");
             }
             return Prodservers;
         }
-        public static void  NEOLOADDATA(List<string> SERVERLIST)
+        public static void NEOLOADDATA(List<string> SERVERLIST)
         {
             try
             {
@@ -553,11 +578,15 @@ namespace API
                 request.Accept = "appliation/json";
                 request.ContentType = "application/json";
                 request.UserAgent = "AEQE Analysis";
-                //Request Headers
-                request.Headers.Add("accountToken" , GetAuth("NEOLOADAUTH"));
+                request.Headers.Add("accountToken", GetAuth("NEOLOADAUTH"));
                 request.Headers.Add("Accept", "application/json");
                 var response = (HttpWebResponse)request.GetResponse();
                 var responseString = new StreamReader(response.GetResponseStream()).ReadToEnd();
+                JToken parsedJson = JToken.Parse(responseString);
+                var beautified = parsedJson.ToString(Formatting.Indented);
+                var minified = parsedJson.ToString(Formatting.None);
+
+                File.WriteAllText(@"c:\Km\NeoloadData.json", beautified);
                 request.Abort();
                 response.Close();
                 JArray jArray = JArray.Parse(responseString);
@@ -567,18 +596,16 @@ namespace API
                 DTAB.Columns.Add("Resource Type");
                 DTAB.Columns.Add("Load Controllers");
                 DTAB.Columns.Add("Load Generators");
-
                 int jsize = jArray.Count;
-
-                for(int x=0;x<jsize;x++)
+                for (int x = 0; x < jsize; x++)
                 {
-                    DataRow DR          = DTAB.NewRow();
-                    DR["Resource Id"]   = (jArray[0]["id"].ToString());
+                    DataRow DR = DTAB.NewRow();
+                    DR["Resource Id"] = (jArray[0]["id"].ToString());
                     DR["Resource Name"] = (jArray[0]["name"].ToString());
-                    DR["Resource Type"] = (jArray[0]["type"].ToString());                    
-                    int controllerCount = jArray[x]["controllers"].Count();                    
-                    DR["Load Controllers"] = "";                    
-                    for (int y = 0;y<controllerCount;y++)
+                    DR["Resource Type"] = (jArray[0]["type"].ToString());
+                    int controllerCount = jArray[x]["controllers"].Count();
+                    DR["Load Controllers"] = "";
+                    for (int y = 0; y < controllerCount; y++)
                     {
                         if (y > 0)
                         {
@@ -591,7 +618,6 @@ namespace API
                     }
                     int loadgencount = jArray[x]["loadgenerators"].Count();
                     DR["Load Generators"] = "";
-
                     for (int y = 0; y < loadgencount; y++)
                     {
                         if (y > 0)
@@ -602,16 +628,15 @@ namespace API
                         {
                             DR["Load Generators"] = jArray[x]["loadgenerators"][y]["name"].ToString();
                         }
-                        if(SERVERLIST.Contains(jArray[x]["loadgenerators"][y]["name"].ToString().ToUpper()))
+                        if (SERVERLIST.Contains(jArray[x]["loadgenerators"][y]["name"].ToString().ToUpper()))
                         {
                             Console.WriteLine("Validated Server: " + jArray[x]["loadgenerators"][y]["name"].ToString().ToUpper());
                             SERVERLIST.Remove(jArray[x]["loadgenerators"][y]["name"].ToString().ToUpper());
                         }
-
                     }
                     DTAB.Rows.Add(DR);
                 }
-                if(SERVERLIST.Count >0)
+                if (SERVERLIST.Count > 0)
                 {
                     Console.WriteLine("Not All Production Servers are Validated");
                 }
@@ -641,365 +666,146 @@ namespace API
                         data[rowNumber + 1, columnNumber] = Convert.ToString(DTAB.Rows[rowNumber][columnNumber]);
                     }
                 }
-                Console.WriteLine("....Range.....");
                 range.Value = data;
-
-                if (File.Exists(@"C:\km\NeoloadResources"  + ".xlsx"))
+                if (File.Exists(@"C:\km\NeoloadResources" + ".xlsx"))
                 {
                     File.Delete(@"C:\km\NeoloadResources" + ".xlsx");
                 }
                 workbook.SaveAs(@"C:\km\NeoloadResources" + ".xlsx");
                 workbook.Close();
             }
-            catch(Exception E)
+            catch (Exception E)
             {
                 MessageBox.Show(E.Message);
             }
         }
-        public static void GENROCKETDATA()
+        public static async Task JIRADEFECTdata(string PrjName,string Bunit)
         {
             try
             {
-                string _URL = "https://genrocketgmusvnextcloud.fi.com:9010/rest/scenario";
-                string REQBODY = File.ReadAllText(@"C:\km\Body.json");
-                Console.WriteLine("a1");
-                //ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls13;
-                HttpWebRequest request = (HttpWebRequest)WebRequest.Create(_URL);
-               // System.Net.ServicePointManager.ServerCertificateValidationCallback +=
-               //delegate (object sender, System.Security.Cryptography.X509Certificates.X509Certificate certificate,
-               //                        System.Security.Cryptography.X509Certificates.X509Chain chain,
-               //                        System.Net.Security.SslPolicyErrors sslPolicyErrors)
-               //{
-               //    try
-               //    {
-               //        Console.WriteLine("SSL certificate error: {0}", sslPolicyErrors);
-
-               //        // bool certMatch = false; // Assume failure
-               //        byte[] certHash = certificate.GetCertHash();
-               //        //if (certHash.Length == apiCertHash.Length)
-               //        //{
-               //        //    certMatch = true; // Now assume success.
-               //        //    for (int idx = 0; idx < certHash.Length; idx++)
-               //        //    {
-               //        //        if (certHash[idx] != apiCertHash[idx])
-               //        //        {
-               //        //            certMatch = false; // No match
-               //        //            break;
-               //        //        }
-               //        //    }
-               //        //}
-               //        return true; // **** Always accept
-               //    }
-               //    catch
-               //    {
-               //        return true;
-               //    }
-               //};
-                //Request Attributes
-                Console.WriteLine("1c");
-                request.Method = WebRequestMethods.Http.Post;
-                request.Accept = "appliation/json";
-                request.ContentType = "application/json";
-                request.UserAgent = "CSharpCpde";
-                request.Headers.Add("Accept", "application/json");
-                byte[] data = System.Text.Encoding.ASCII.GetBytes(REQBODY);
-                request.ContentType = "application/json";
-                request.Accept = "application/json";
-                request.ContentLength = data.Length;
-                Stream requestStream = request.GetRequestStream();
-                requestStream.Write(data, 0, data.Length);
-                Console.WriteLine("1d");
-                requestStream.Close();
-                var response = (HttpWebResponse)request.GetResponse();
-                Console.WriteLine("1e");
-                var responseString = new StreamReader(response.GetResponseStream()).ReadToEnd();
-                request.Abort();
-                Console.WriteLine(responseString.ToString());
-            }
-            catch(WebException E)
-            {
-                Console.WriteLine("Response Messge: " + E.Message.ToString());
-                Console.WriteLine("Response Messge: " + E.InnerException.ToString());
-                Console.WriteLine("Response: " + (E.Response as HttpWebResponse)?.StatusDescription);
-                Console.WriteLine("Status Code: " + ((int)(E.Response as HttpWebResponse)?.StatusCode).ToString());
-            }
-        }
-        public static void JIRADEFECTdata()
-        {
-            try
-            {
-                //URL
-                Console.WriteLine("Which Project you need the defect details on: ");
-                string Prj = Console.ReadLine();
-                Console.WriteLine("Initializing Table Definitions.......");
-                System.Data.DataTable DXT = new();
-                //Add COlumns
-                DXT.Columns.Add("Creation Date");
-                DXT.Columns.Add("Key");
-                DXT.Columns.Add("Sprint");
-                DXT.Columns.Add("Sprint Start Date");
-                DXT.Columns.Add("Sprint End Date");
-                DXT.Columns.Add("Status");
-                DXT.Columns.Add("Summary");
-                DXT.Columns.Add("Type");
-                DXT.Columns.Add("Issue Type");
-                DXT.Columns.Add("Assignee");
-                DXT.Columns.Add("Priority");
-                DXT.Columns.Add("Severity");
-                DXT.Columns.Add("Resolution");
-                DXT.Columns.Add("Purpose");
-                List<DefectData> DefectArray = new List<DefectData>();
+                string Prj = PrjName;
+                
+                string AUTHSTR = GetAuth("JIRAAUTH");
+                string Purpose = Prj + " Defect Reporting"; 
                 int stindx = 0;
+                var method = HttpMethod.Get;
+                DateTime CDate = DateTime.Now;
+                int month, date, year;
+                string creationdate = "";
+                int Dage = 0;
+                string _URL = "";
+                string responseString = "";
+                int jsize = 0,i;
+                JObject jobj;
+                JArray jArray;
+                HttpClient client;
+                HttpRequestMessage request;
                 while (1 == 1)
                 {
-                    string _URL = "https://fish-net.atlassian.net/rest/api/2/search?jql=project=" + Prj + " And type=Bug order by created asc&fields=key,sprint,status,priority,issuetype,priority,assignee,summary,customfield_10344,created,resolution&startAt=" + stindx.ToString() + "&maxResults=100";
-                    //Create Request
-                    HttpWebRequest request = (HttpWebRequest)WebRequest.Create(_URL);
-                    //Request Attributes
-                    request.Method = WebRequestMethods.Http.Get;
-                    request.Accept = "appliation/json";
-                    request.ContentType = "application/json";
-                    request.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36 Edg/127.0.0.0";
-                    //Request Headers
-                    request.Headers.Add("Authorization"
-                                      , GetAuth("JIRAAUTH"));
-                    request.Headers.Add("Accept", "application/json");
-                    var response = (HttpWebResponse)request.GetResponse();
-                    var responseString = new StreamReader(response.GetResponseStream()).ReadToEnd();
-                    request.Abort();
-                    response.Close();
-                    //json parsing
-                    JObject jobj = JObject.Parse(responseString);
-                    JArray jArray = (JArray)jobj["issues"];
-                    Console.WriteLine("Defect Count : " + jArray.Count.ToString());
-                    int jsize = jArray.Count;  
-                    Console.WriteLine("Initializing Data Collections.......");
-                    int j = 0, refint = jsize / 10;
-                    for (int i = 0; i < jsize; i++)
+                    _URL = "https://fish-net.atlassian.net/rest/api/2/search?jql=project=" + Prj + " And type=Bug order by created asc&fields=key,sprint,status,priority,issuetype,priority,assignee,summary,customfield_10344,created,resolution&startAt=" + stindx.ToString() + "&maxResults=100";
+                    client = new HttpClient();
+                    request = new HttpRequestMessage();                   
+                    request.RequestUri = new Uri(_URL);
+                    request.Method =method;
+                    request.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("application/json"));
+                    request.Headers.Add("User-Agent", "QE Analysis");
+                    request.Headers.Add("Authorization", AUTHSTR);
+                    var response = await client.SendAsync(request);
+                     responseString = await response.Content.ReadAsStringAsync();
+                    jobj = JObject.Parse(responseString);
+                    jArray = (JArray)jobj["issues"];
+                    jsize = jArray.Count;                  
+                    Dage = 0;
+                    for (i = 0; i < jsize; i++)
                     {
                         DefectData DDa = new DefectData();
-                        DataRow DXTRow = DXT.NewRow();
-                        DXTRow["Key"] = jobj["issues"][i]["key"].ToString();
+                        DDa.ID= jobj["issues"][i]["id"].ToString();
                         DDa.Key = jobj["issues"][i]["key"].ToString();
-                        DXTRow["Status"] = jobj["issues"][i]["fields"]["status"]["name"].ToString();
+                        DDa.Project = Prj;
+                        DDa.BU = Bunit;
                         DDa.Status = jobj["issues"][i]["fields"]["status"]["name"].ToString();
-                        DXTRow["Summary"] = jobj["issues"][i]["fields"]["summary"].ToString();
-                        DDa.Summary = jobj["issues"][i]["fields"]["summary"].ToString();
-                        DXTRow["Type"] = "Bug";
-                        DDa.Type = "Bug";
-                        DXTRow["Purpose"] = Prj + " Defect Reporting";
-                        DDa.Purpose = Prj + " Defect Reporting";
+                        DDa.Summary = jobj["issues"][i]["fields"]["summary"].ToString();                   
+                        DDa.Purpose = Purpose;
                         List<string> sdata = GetSprint(jobj["issues"][i]["key"].ToString());
-                        DXTRow["Sprint"] = sdata[0];
-                        DDa.Sprint = sdata[0];
-                        DXTRow["Sprint Start Date"] = sdata[1];
+                        if (!string.IsNullOrEmpty(sdata[0]))
+                        {
+                            DDa.Sprint = sdata[0];
+                        }
+                        else
+                        {
+                            DDa.Sprint = "Not Defined";
+                        }
                         DDa.Sprint_Start_Date = sdata[1];
-                        DXTRow["Sprint End Date"] = sdata[2];
-                        DDa.Sprint_End_Date = sdata[2];
-                        DXTRow["Issue Type"] = jobj["issues"][i]["fields"]["issuetype"]["name"].ToString();
                         DDa.Issue_Type = jobj["issues"][i]["fields"]["issuetype"]["name"].ToString();
-                        DXTRow["Assignee"] = Convert.ToString(jobj["issues"][i]["fields"]["Assignee"]);
                         DDa.Assignee = Convert.ToString(jobj["issues"][i]["fields"]["Assignee"]);
-                        DXTRow["Priority"] = Convert.ToString(jobj["issues"][i]["fields"]["priority"]["name"]);
-                        DDa.Priority = Convert.ToString(jobj["issues"][i]["fields"]["priority"]["name"]);
-                        DXTRow["Severity"] = "";
-                        DDa.Severity = "";
-                        DDa.Creation_Date = Convert.ToString(jobj["issues"][i]["fields"]["created"]).Split(' ')[0];
+                        if (!string.IsNullOrEmpty(Convert.ToString(jobj["issues"][i]["fields"]["priority"]["name"])))
+                        {
+                            DDa.Priority = Convert.ToString(jobj["issues"][i]["fields"]["priority"]["name"]);
+                        }
+                        else
+                        {
+                            DDa.Priority = "Not Defined";
+                        }
+                        creationdate = Convert.ToString(jobj["issues"][i]["fields"]["created"]).Split(' ')[0];
+                        string[] datemon = creationdate.Split('/');
+                        int.TryParse(datemon[0], out month);
+                        int.TryParse(datemon[1], out date);
+                        int.TryParse(datemon[2], out year);
+                         CDate = new DateTime(year,month,date);
+                         Dage = (DateTime.Now - CDate).Days;
+                        if(Dage<=10)
+                        {
+                            DDa.DefectAge = "<=10 Days";
+                        }
+                        else if (Dage <= 30)
+                        {
+                            DDa.DefectAge = "<=30 Days";
+                        }
+                        else if (Dage <= 60)
+                        {
+                            DDa.DefectAge = "<=60 Days";
+                        }
+                        else if (Dage <= 100)
+                        {
+                            DDa.DefectAge = "<=100 Days";
+                        }
+                        else
+                        {
+                            DDa.DefectAge = ">100 Days";
+                        }
+                        DDa.Creation_Date = creationdate;
+
                         try
                         {
-                            DXTRow["Severity"] = Convert.ToString(jobj["issues"][i]["fields"]["customfield_10344"]["value"]);
                             DDa.Severity = Convert.ToString(jobj["issues"][i]["fields"]["customfield_10344"]["value"]);
                         }
                         catch
                         {
+                            DDa.Severity = "Not Defined";
                         }
                         try
                         {
-                            DXTRow["Resolution"] = Convert.ToString(jobj["issues"][i]["fields"]["resolution"]["name"]);
                             DDa.Resolution = Convert.ToString(jobj["issues"][i]["fields"]["resolution"]["name"]);
                         }
                         catch
                         {
-                            DXTRow["Resolution"] = "";
-                            DDa.Resolution = "";
+                            DDa.Resolution = "Not Defined";
                         }
-                        DXT.Rows.Add(DXTRow);
                         DefectArray.Add(DDa);
-                        j = j + 1;
-                        if (j == refint)
-                        {
-                            float per = ((((float)i + 1) / (float)jsize)) * 100;
-                            j = 0;
-
-                            Console.WriteLine("Percentage Complete: " + per.ToString("0.00"));
-                        }
                     }
-                    if(jsize <100)
+                    if (jsize < 100)
                     {
                         break;
                     }
                     stindx = stindx + 100;
                 }
-                DataTable SummarySprintStatus = SortDatatable_H_V_Count("Sprint", "Status", DXT);
-                DataTable SummarySprintPriority = SortDatatable_H_V_Count("Sprint", "Priority", DXT);
-                DataTable SummarySprintSeverity = SortDatatable_H_V_Count("Sprint", "Severity", DXT);
-                DataTable SummaryDefect = SortDatatable_H_Count("Status", DXT);
-                DataTable SummaryDefectRolling = SortDatatable_H_RollingCount("Creation Date", DXT);
-                Excel.Application application = new Excel.Application();
-                Excel.Workbook workbook = application.Workbooks.Add();
-                Excel.Worksheet worksheet = workbook.Sheets[1];
-                worksheet.Name = "Dafect Data";
-                Excel.Worksheet worksheet2 = workbook.Sheets.Add();
-                worksheet2.Name = "Summary Data";
-                /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-                var columns = DXT.Columns.Count;
-                var rows = DXT.Rows.Count;
-
-                Excel.Range range = worksheet.Range["A1", String.Format("{0}{1}", GetExcelColumnName(columns), rows + 1)];
-
-                object[,] data = new object[rows + 1, columns];
-
-                for (int rowNumber = 0; rowNumber < rows; rowNumber++)
-                {
-                    if (rowNumber == 0)
-                    {
-                        for (int columnNumber = 0; columnNumber < columns; columnNumber++)
-                        {
-                            data[rowNumber, columnNumber] = (DXT.Columns[columnNumber].ColumnName);
-                        }
-                    }
-                    for (int columnNumber = 0; columnNumber < columns; columnNumber++)
-                    {
-                        data[rowNumber + 1, columnNumber] = Convert.ToString(DXT.Rows[rowNumber][columnNumber]);
-                    }
-                }
-                Console.WriteLine("....Range.....");
-                range.Value = data;
-                Console.WriteLine("....Summary.....");
-                var columns2 = SummarySprintStatus.Columns.Count;
-                var rows2 = SummarySprintStatus.Rows.Count;
-                object[,] data2 = new object[rows2 + 1, columns2];
-                for (int rowNumber = 0; rowNumber < rows2; rowNumber++)
-                {
-                    if (rowNumber == 0)
-                    {
-                        for (int columnNumber = 0; columnNumber < columns2; columnNumber++)
-                        {
-                            data2[rowNumber, columnNumber] = (SummarySprintStatus.Columns[columnNumber].ColumnName);
-                        }
-                    }
-                    for (int columnNumber = 0; columnNumber < columns2; columnNumber++)
-                    {
-                        data2[rowNumber + 1, columnNumber] = Convert.ToString(SummarySprintStatus.Rows[rowNumber][columnNumber]);
-                    }
-                }
-                worksheet2.Activate();
-                Excel.Range range2 = worksheet2.Range["A1", String.Format("{0}{1}", GetExcelColumnName(columns2), rows2 + 1)];
-                range2.Value = data2;
-                var columns3 = SummarySprintPriority.Columns.Count;
-                var rows3 = SummarySprintPriority.Rows.Count;
-                object[,] data3 = new object[rows3 + 1, columns3];
-                Console.WriteLine("....Summary Priority..... " + columns3.ToString() + " .... " + rows3.ToString());
-                for (int rowNumber = 0; rowNumber < rows3; rowNumber++)
-                {
-                    if (rowNumber == 0)
-                    {
-                        for (int columnNumber = 0; columnNumber < columns3; columnNumber++)
-                        {
-                            data3[rowNumber, columnNumber] = (SummarySprintPriority.Columns[columnNumber].ColumnName);
-                        }
-                    }
-                    for (int columnNumber = 0; columnNumber < columns3; columnNumber++)
-                    {
-                        data3[rowNumber + 1, columnNumber] = Convert.ToString(SummarySprintPriority.Rows[rowNumber][columnNumber]);
-                    }
-                }
-                worksheet2.Activate();
-                Excel.Range range3 = worksheet2.Range["J1", String.Format("{0}{1}", GetExcelColumnName(columns3 + 9), rows3 + 1)];
-                range3.Value = data3;
-                var columns4 = SummarySprintSeverity.Columns.Count;
-                var rows4 = SummarySprintSeverity.Rows.Count;
-                object[,] data4 = new object[rows4 + 1, columns4];
-                for (int rowNumber = 0; rowNumber < rows4; rowNumber++)
-                {
-                    if (rowNumber == 0)
-                    {
-                        for (int columnNumber = 0; columnNumber < columns4; columnNumber++)
-                        {
-                            data4[rowNumber, columnNumber] = (SummarySprintSeverity.Columns[columnNumber].ColumnName);
-                        }
-                    }
-                    for (int columnNumber = 0; columnNumber < columns4; columnNumber++)
-                    {
-                        data4[rowNumber + 1, columnNumber] = Convert.ToString(SummarySprintSeverity.Rows[rowNumber][columnNumber]);
-                    }
-                }
-                worksheet2.Activate();
-                Excel.Range range4 = worksheet2.Range["S1", String.Format("{0}{1}", GetExcelColumnName(columns4 + 18), rows4 + 1)];
-                range4.Value = data4;
-                var columns5 = SummaryDefect.Columns.Count;
-                var rows5 = SummaryDefect.Rows.Count;
-                Console.WriteLine("SummaryDefect Rows Count: " + rows5.ToString());
-                object[,] data5 = new object[rows5 + 1, columns5];
-                for (int rowNumber = 0; rowNumber < rows5; rowNumber++)
-                {
-                    if (rowNumber == 0)
-                    {
-                        for (int columnNumber = 0; columnNumber < columns5; columnNumber++)
-                        {
-                            data5[rowNumber, columnNumber] = (SummaryDefect.Columns[columnNumber].ColumnName);
-                        }
-                    }
-                    for (int columnNumber = 0; columnNumber < columns5; columnNumber++)
-                    {
-                        data5[rowNumber + 1, columnNumber] = Convert.ToString(SummaryDefect.Rows[rowNumber][columnNumber]);
-                    }
-                }
-                worksheet2.Activate();
-                Excel.Range range5 = worksheet2.Range["AA1", String.Format("{0}{1}", GetExcelColumnName(columns5 + 26), rows5 + 1)];
-                range5.Value = data5;
-                var columns6 = SummaryDefectRolling.Columns.Count;
-                var rows6 = SummaryDefectRolling.Rows.Count;
-                object[,] data6 = new object[rows6 + 1, columns6];
-                for (int rowNumber = 0; rowNumber < rows6; rowNumber++)
-                {
-                    if (rowNumber == 0)
-                    {
-                        for (int columnNumber = 0; columnNumber < columns6; columnNumber++)
-                        {
-                            data6[rowNumber, columnNumber] = (SummaryDefectRolling.Columns[columnNumber].ColumnName);
-                        }
-                    }
-                    for (int columnNumber = 0; columnNumber < columns6; columnNumber++)
-                    {
-                        data6[rowNumber + 1, columnNumber] = Convert.ToString(SummaryDefectRolling.Rows[rowNumber][columnNumber]);
-                    }
-                }
-                worksheet2.Activate();
-                Excel.Range range6 = worksheet2.Range["AE1", String.Format("{0}{1}", GetExcelColumnName(columns6 + 30), rows6 + 1)];
-                range6.Value = data6;                
-                Console.WriteLine("Saving Excel Workbook");
-                if (File.Exists(@"C:\km\DefectDetails_" + Prj + ".xlsx"))
-                {
-                    File.Delete(@"C:\km\DefectDetails_" + Prj + ".xlsx");
-                }
-                workbook.SaveAs(@"C:\km\DefectDetails_" + Prj + ".xlsx");
-                workbook.Close();
-                Marshal.ReleaseComObject(application);                
-                Console.WriteLine("Done....");
                 var prettyJson = System.Text.Json.JsonSerializer.Serialize(DefectArray, new JsonSerializerOptions { WriteIndented = true });
-                DataSet SPLUNKSEND = new DataSet();
-                DXT.TableName = "DEFECTDATA";
-                SPLUNKSEND.DataSetName = "SPLUNKSEND";
-                SPLUNKSEND.Tables.Add(DXT);
-                File.WriteAllText(@"c:\km\" + Prj+ "Defectdata.json", prettyJson);
                 UploadToSPlunk(prettyJson);
-                SPLUNKSEND.WriteXml(@"c:\km\DefectDataXML.xml");
-                
+                DefectArray = new();
             }
-            catch (Exception E)
+            catch(Exception E)
             {
-                Console.WriteLine("Error In The Code: " + E.Message);
+                Console.WriteLine("Error: " + E.Message);
             }
         }
         public static void UploadToSPlunk(string REQBODY)
@@ -1007,15 +813,11 @@ namespace API
             try
             {
                 string _URL = "https://http-inputs.fisherinvestments.splunkcloud.com/services/collector/raw";
-                Console.WriteLine(REQBODY);
-                //Create Request
                 HttpWebRequest request = (HttpWebRequest)WebRequest.Create(_URL);
-                //Request Attributes
                 request.Method = WebRequestMethods.Http.Post;
                 request.Accept = "application/json";
                 request.ContentType = "application/json";
                 request.UserAgent = "AEQE Script";
-                //Request Headers
                 request.Headers.Add("Authorization", GetAuth("SPLUNKAUTH"));
                 byte[] data = System.Text.Encoding.ASCII.GetBytes(REQBODY);
                 request.ContentLength = data.Length;
@@ -1024,7 +826,6 @@ namespace API
                 requestStream.Close();
                 var response = (HttpWebResponse)request.GetResponse();
                 var responseString = new StreamReader(response.GetResponseStream()).ReadToEnd();
-                Console.WriteLine(responseString);
                 request.Abort();
                 response.Close();
             }
@@ -1032,133 +833,7 @@ namespace API
             {
                 Console.WriteLine("Error In Pushing To Splunk: " + E.Message);
             }
-        }
-        public static System.Data.DataTable SortDatatable_H_V_Count(string Horizontal,string Vertical,System.Data.DataTable DT)
-        {
-            try
-            {
-                System.Data.DataTable DXR = new System.Data.DataTable();
-                DataView view = new DataView(DT);
-                DataTable distinctValuesH = view.ToTable(true, Horizontal);
-                DataView view1 = new DataView(DT);
-                DataTable distinctValuesV = view1.ToTable(true, Vertical);
-                int vcount = distinctValuesV.Rows.Count;
-                DXR.Columns.Add(Horizontal);
-                int dCount = DT.Rows.Count;
-                
-                for (int x=0;x<vcount;x++)
-                {
-                    DXR.Columns.Add(Convert.ToString(distinctValuesV.Rows[x][0]));
-                }
-                int colcount = DXR.Columns.Count;
-                int hcount = distinctValuesH.Rows.Count;
-                for (int x = 0; x < hcount; x++)
-                {
-                    DataRow DXRROW = DXR.NewRow();
-                    string horizontalval  = Convert.ToString(distinctValuesH.Rows[x][0]);
-                    DXRROW[0] = horizontalval;
-                    for (int w = 1; w < colcount; w++)
-                    {
-                        string colval = DXR.Columns[w].ColumnName;
-                        int count = 0;
-                        for (int y = 0; y < dCount; y++)
-                        {
-                            if (Convert.ToString(DT.Rows[y][Horizontal]) == horizontalval && Convert.ToString(DT.Rows[y][Vertical]) == colval)
-                            {
-                                count++;
-                            }
-                        }
-                        DXRROW[w] = count;
-                    }
-                    DXR.Rows.Add(DXRROW);
-                }
-                return DXR;
-            }
-            catch
-            {
-                return new System.Data.DataTable();
-            }
-        }
-        public static System.Data.DataTable SortDatatable_H_Count(string Horizontal, System.Data.DataTable DT)
-        {
-            try
-            {
-                System.Data.DataTable DXR = new System.Data.DataTable();
-                DataView view = new DataView(DT);
-                DataTable distinctValuesH = view.ToTable(true, Horizontal);
-                DXR.Columns.Add(Horizontal);
-                DXR.Columns.Add("Count");
-                int dCount = DT.Rows.Count;
-                int colcount = DXR.Columns.Count;
-                int hcount = distinctValuesH.Rows.Count;
-                for (int x = 0; x < hcount; x++)
-                {
-                    DataRow DXRROW = DXR.NewRow();
-                    string horizontalval = Convert.ToString(distinctValuesH.Rows[x][0]);
-                    DXRROW[0] = horizontalval;
-                    for (int w = 1; w < colcount; w++)
-                    {
-                        int count = 0;
-                        for (int y = 0; y < dCount; y++)
-                        {
-                            if (Convert.ToString(DT.Rows[y][Horizontal]) == horizontalval)
-                            {
-                                count++;
-                            }
-                        }
-                        DXRROW[w] = count;
-                    }
-                    DXR.Rows.Add(DXRROW);
-                }
-                return DXR;
-            }
-            catch
-            {
-                return new System.Data.DataTable();
-            }
-        }
-        public static System.Data.DataTable SortDatatable_H_RollingCount(string Horizontal, System.Data.DataTable DT)
-        {
-            try
-            {
-                System.Data.DataTable DXR = new System.Data.DataTable();
-                DataView view = new DataView(DT);
-                DataTable distinctValuesH = view.ToTable(true, Horizontal);
-
-                DXR.Columns.Add(Horizontal);
-                DXR.Columns.Add("Count");
-
-                int dCount = DT.Rows.Count;
-
-                int colcount = DXR.Columns.Count;
-                int hcount = distinctValuesH.Rows.Count;
-                int count = 0;
-                for (int x = 0; x < hcount; x++)
-                {
-                    DataRow DXRROW = DXR.NewRow();
-                    string horizontalval = Convert.ToString(distinctValuesH.Rows[x][0]);
-                    DXRROW[0] = horizontalval;
-                    for (int w = 1; w < colcount; w++)
-                    {                        
-                        for (int y = 0; y < dCount; y++)
-                        {
-                            if (Convert.ToString(DT.Rows[y][Horizontal]) == horizontalval)
-                            {
-                                count++;
-                            }
-                        }
-                        DXRROW[w] = count;
-                    }
-                    DXR.Rows.Add(DXRROW);
-                }
-                return DXR;
-            }
-            catch
-            {
-                return new System.Data.DataTable();
-            }
-        }
-        
+        }        
         private static List<string> GetSprint(string defectKey)
         {
             List<string> sprintdata = new();
@@ -1169,24 +844,20 @@ namespace API
                 request.Method = WebRequestMethods.Http.Get;
                 request.Accept = "appliation/json";
                 request.ContentType = "application/json";
-                request.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36 Edg/127.0.0.0";
-                request.Headers.Add("Authorization"
-                                  , GetAuth("JIRAAUTH"));
+                request.UserAgent = "QE Analysis";
+                request.Headers.Add("Authorization" , GetAuth("JIRAAUTH"));
                 request.Headers.Add("Accept", "application/json");
                 var response = (HttpWebResponse)request.GetResponse();
                 var responseString = new StreamReader(response.GetResponseStream()).ReadToEnd();
-                //json parsing
                 JObject jobj = JObject.Parse(responseString);
                 response.Close();
                 request.Abort();
                 sprintdata.Add(Convert.ToString(jobj["fields"]["customfield_10020"][0]["name"]));
                 sprintdata.Add(Convert.ToString(jobj["fields"]["customfield_10020"][0]["startDate"]));
-                sprintdata.Add(Convert.ToString(jobj["fields"]["customfield_10020"][0]["endDate"]));
                 return sprintdata;
             }
             catch(Exception )
             {
-                sprintdata.Add("");
                 sprintdata.Add("");
                 sprintdata.Add("");
                 return sprintdata;
@@ -1197,7 +868,6 @@ namespace API
             int dividend = columnNumber;
             string columnName = String.Empty;
             int modulo;
-
             while (dividend > 0)
             {
                 modulo = (dividend - 1) % 26;
@@ -1205,8 +875,7 @@ namespace API
                 dividend = (int)((dividend - modulo) / 26);
             }
             return columnName;
-        }
- 
+        } 
         public static string GetAuth(string refstr = "JIRAAUTH")
         {
             try
@@ -1221,6 +890,8 @@ namespace API
                         return jobj["ZEPHYRAUTH"].ToString();
                     case "SPLUNKAUTH":
                         return jobj["SPLUNKAUTH"].ToString();
+                    case "NEOLOADAUTH":
+                        return jobj["NEOLOADAUTH"].ToString();
                 }
                 return "";
             }
