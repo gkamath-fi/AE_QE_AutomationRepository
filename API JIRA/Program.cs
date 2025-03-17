@@ -17,44 +17,44 @@ namespace API
     public class DefectData
     {
         [DisplayName("Project")]
-        public string Project { get; set; } = "";
+        public string Project { get; set; } = ""; // JIRA project
         [DisplayName("Creation Date")]
-        public string Creation_Date { get; set; } = "";
+        public string Creation_Date { get; set; } = ""; // defect creation date
         [DisplayName("Business Unit")]
-        public string BU{ get; set; } = "";
+        public string BU{ get; set; } = ""; //business unit
         [DisplayName("Defect Key")]
-        public string Key { get; set; } = "";
+        public string Key { get; set; } = "";// defect Key
         [DisplayName("Defect ID")]
-        public string ID { get; set; } = "";
+        public string ID { get; set; } = "";// Defect ID
         [DisplayName("Defect Age")]
-        public string DefectAge { get; set; } = "";
+        public string DefectAge { get; set; } = "";// Defect Age
         [DisplayName("Sprint")]
-        public string Sprint { get; set; } = "";
+        public string Sprint { get; set; } = ""; // sprint name
         [DisplayName("Sprint Start Date")]
-        public string Sprint_Start_Date { get; set; } = "";
+        public string Sprint_Start_Date { get; set; } = "";// Sprint start date
         [DisplayName("Sprint End Date")]
-        public string Sprint_End_Date { get; set; } = "";
+        public string Sprint_End_Date { get; set; } = "";//sprint end date
         [DisplayName("Defect Status")]
-        public string Status { get; set; } = "";
+        public string Status { get; set; } = ""; //defect status
         [DisplayName("Defect Summary")]
-        public string Summary { get; set; } = "";
-        [DisplayName("Defect Type")]
-        public string Type { get; set; } = "Bug";
+        public string Summary { get; set; } = "";   // Dfect 1 liner summary
+        [DisplayName("Defect Type")]  
+        public string Type { get; set; } = "Bug"; //Defect Type
         [DisplayName("Issue Type")]
-        public string Issue_Type { get; set; } = "";
+        public string Issue_Type { get; set; } = "";// Issue Type
         [DisplayName("Assignee")]
-        public string Assignee { get; set; } = "";
+        public string Assignee { get; set; } = "";//Whom defect is assigned to
         [DisplayName("Defect Priority")]
-        public string Priority { get; set; } = "";
+        public string Priority { get; set; } = "";// Defect priority
         [DisplayName("Defect Severity")]
-        public string Severity { get; set; } = "";
+        public string Severity { get; set; } = "";// defect Severity
         [DisplayName("Defect Resolution")]
-        public string Resolution { get; set; } = "";
+        public string Resolution { get; set; } = "";//Defect Resolution
         [DisplayName("Defect Purpose")]
-        public string Purpose { get; set; } = "";
+        public string Purpose { get; set; } = "";// Reference Splunk search string
         //Automation reporting for PCG new change on 3/10/2025
         [DisplayName("Linked Test")]
-        public string LinkedTest { get; set; } = "";
+        public string LinkedTest { get; set; } = "";//associated test case
     }  
 
     public class TEMPLINKVAL
@@ -216,8 +216,7 @@ namespace API
                         TCArray[j].Automated = "Yes";
                         break;
                     }
-                }
-                
+                }                
             }
             catch
             {
@@ -275,8 +274,7 @@ namespace API
                 int jsize = 0;
                 string responseString;
                 while (continueloop)
-                {
-                    
+                {                    
                     HttpWebRequest request = (HttpWebRequest)WebRequest.Create("https://api.zephyrscale.smartbear.com/v2/testexecutions?projectKey=" + Prj + "&maxResults=" + maxresults.ToString() + "&startAt=" + startindx.ToString());
                     request.Method = "GET";
                     request.UserAgent = "AEQE Analysis";
@@ -292,8 +290,7 @@ namespace API
                     for (int i = 0; i < jsize; i++)
                     {
                         TextExecutionData teitem = new TextExecutionData();
-                        teitem.Purpose = purpose;
-                        
+                        teitem.Purpose = purpose;                        
                         teitem.TestExecutionKey = jobj["values"][i]["key"].ToString();
                         
                         try
@@ -315,8 +312,7 @@ namespace API
                             }
                         }
                         catch
-                        {
-                            
+                        {                            
                             teitem.Environment = "Not Mentioned";
                         }
                         teitem.ActualEndDate = jobj["values"][i]["actualEndDate"].ToString().Split(' ')[0];
@@ -328,11 +324,7 @@ namespace API
                         }
                         else
                         {
-                            TCAutomated(jobj["values"][i]["testCase"]["self"].ToString());
-                            //if (teitem.Status == "Blocked" || teitem.Status == "Fail")
-                            //{
-                            //    GETISSUELINK(teitem.TestExecutionKey);
-                            //}
+                            TCAutomated(jobj["values"][i]["testCase"]["self"].ToString());                            
                         }
                         teitem.ExecutionType= autostatus;
                         try
@@ -437,6 +429,7 @@ namespace API
                     }
                     startindx = startindx + 50;
                 } 
+                //Cannot write to splunk yet as further updates followed
                 //var prettyJson = System.Text.Json.JsonSerializer.Serialize(TCArray, new JsonSerializerOptions { WriteIndented = true });
                // UploadToSPlunk(prettyJson);
             }
@@ -547,7 +540,6 @@ namespace API
                 var response = (HttpWebResponse)request.GetResponse();
                 
                 var responseString = new StreamReader(response.GetResponseStream()).ReadToEnd();
-
                 
                 string rx = @"([A-Za-z]{2})-([A-Za-z]{2})-([A-Za-z]{1})(\d{5}):7100";
                 request.Abort();
@@ -585,7 +577,7 @@ namespace API
                 JToken parsedJson = JToken.Parse(responseString);
                 var beautified = parsedJson.ToString(Formatting.Indented);
                 var minified = parsedJson.ToString(Formatting.None);
-
+                //Write To a File 
                 File.WriteAllText(@"c:\Km\NeoloadData.json", beautified);
                 request.Abort();
                 response.Close();
@@ -683,8 +675,7 @@ namespace API
         {
             try
             {
-                string Prj = PrjName;
-                
+                string Prj = PrjName;                
                 string AUTHSTR = GetAuth("JIRAAUTH");
                 string Purpose = Prj + " Defect Reporting"; 
                 int stindx = 0;
