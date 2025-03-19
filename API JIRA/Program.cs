@@ -202,6 +202,8 @@ namespace API
             [DisplayName("Execution Type")]
             public string ExecutionType { get; set; } = "";
         }
+
+        //find if a test case is automated or not
         public static void TCAutomated(string TCIDS)
         {
             try
